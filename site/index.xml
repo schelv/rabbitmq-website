@@ -186,11 +186,9 @@ limitations under the License.
               <img src="./img/commercial-distribution-phone.svg" height="111" width="88" />
               <h2>Commercial Distribution</h2>
               <p>
-                VMware offers a <a href="https://tanzu.vmware.com/rabbitmq">range of commercial offerings for RabbitMQ</a>.
-                This includes a distribution called <a href="https://tanzu.vmware.com/services-marketplace/messaging-and-integration/rabbitmq">Tanzu RabbitMQ</a> that deploys on Kubernetes or
-                your container Runtime, as well as a version that deploys in
-                <a href="https://tanzu.vmware.com/tanzu">VMware Tanzu Application Service</a>.
-                These distributions include all of the features of the open source version, with some additional management and business continuity features. Support agreements are part of the commercial licensing.
+                As well as support for open source RabbitMQ, VMware offers a <a href="https://tanzu.vmware.com/rabbitmq">range of commercial offerings for RabbitMQ</a>.
+                These offerings include all of the features of the oppen source offering, as well as some additional management and business continuity features. Support agreements are part of the commercial licensing. These offerings consist of:
+                <a href="https://network.tanzu.vmware.com/products/p-rabbitmq-for-kubernetes">Tanzu RabbitMQ for Kubernetes</a>, which can be deployed on any conformant Kubernetes distribution; <a href="https://network.tanzu.vmware.com/products/rabbitmq">Tanzu RabbitMQ</a>, which can be deployed on any container runtime; <a href="https://network.tanzu.vmware.com/products/p-rabbitmq">Tanzu RabbitMQ for VMs</a>, which can be deployed on <a href="https://tanzu.vmware.com/application-service">VMware Tanzu Application Service</a>.
               </p>
               <img src="./img/support-and-hosting-phone.svg" height="94" width="109" />
               <h2>Support + Hosting</h2>
