@@ -68,7 +68,7 @@ const config = {
       /** @type {import('@docusaurus/preset-classic').Options} */
       ({
         docs: {
-          sidebarPath: './sidebars.js',
+          sidebarPath: './sidebarsDocs.js',
 
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
@@ -87,6 +87,18 @@ const config = {
           customCss: './src/css/custom.css',
         },
       }),
+    ],
+  ],
+
+  plugins: [
+    [
+      '@docusaurus/plugin-content-docs',
+      {
+        id: 'tutorials',
+        path: 'tutorials',
+        routeBasePath: 'tutorials',
+        sidebarPath: './sidebarsTutorials.js',
+      },
     ],
   ],
 
@@ -142,7 +154,7 @@ const config = {
             items: [
               {
                 label: 'Tutorials',
-                to: '/docs/tutorials',
+                to: '/tutorials',
               },
               {
                 label: 'Install',
