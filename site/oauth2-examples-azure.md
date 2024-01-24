@@ -17,7 +17,8 @@ limitations under the License.
 
 # Use Azure Active Directory (Azure AD) as OAuth 2.0 server
 
-Let's test the following 3 OAuth flows:
+Demonstrate how to authenticate using OAuth 2.0 protocol
+and Azure Active Directory as Authorization Server using the following flows:
 
 * Access management UI via a browser :ballot_box_with_check:
 * Access management rest api :construction:

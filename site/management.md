@@ -41,15 +41,21 @@ This guide covers:
  * How to [enable HTTPS for management UI](#single-listener-https) and its underlying API
  * How this plugin [operates in multi-node clusters](#clustering)
  * How to [disable metric collection](#disable-stats) to use [Prometheus](prometheus.html) exclusively for monitoring
- * [OAuth 2](#oauth2-authentication) support
+ * [OAuth 2](#oauth2-authentication) support:
+    * [Basic Configuration](#basic-configuration)
+    * [Configure client secret](#configure-client-secret)
+    * [Allow Basic and OAuth 2 authentication for Management HTTP API](#allow-basic-auth-for-http-api)
+    * [Allow Basic and OAuth 2 authentication for Management UI](#allow-basic-auth-for-mgt-ui)
+    * [About Logout workflow](#about-logout-workflow)
+    * [Special attention to CSP header `connect-src`](#csp-header)
+    * [Identity-Provider initiated logon](#idp-initiated-logon)
+    * [Support multiple OAuth 2.0 resources](#support-multiple-resources)
  * [Strict transport security](#hsts), [Content security policy](#csp), [cross-origin resource sharing](#cors), and [other security-related header](#other-security-headers) control
  * [Statistics collection interval](#statistics-interval)
  * [Message rate mode](#rates-mode) (rate fidelity) and [data retention intervals](#sample-retention)
  * [HTTP API request logging](#http-logging)
  * How to set a [management UI login session timeout](#login-session-timeout)
  * How to [reset statistics database](#reset-stats) used by this plugin
-
-as well as other related topics.
 
 The plugin also provides extension points that other plugins, such as
 [rabbitmq-top](https://github.com/rabbitmq/rabbitmq-top) or
@@ -287,9 +293,7 @@ rabbitmqctl set_user_tags full_access administrator
 ## <a id="oauth2-authentication" class="anchor" href="#oauth2-authentication">Authenticating with OAuth 2</a>
 
 RabbitMQ can be configured to use [JWT-encoded OAuth 2.0 access tokens](https://github.com/rabbitmq/rabbitmq-auth-backend-oauth2) to authenticate client applications and management UI users. When doing so, the management UI does
-not automatically redirect users to authenticate
-against the OAuth 2 server, this must be configured separately. Currently,
-**Authorization code flow with PKCE** is tested with the following Authorization servers:
+not automatically redirect users to authenticate against the OAuth 2 server, this must be configured separately. Currently, **Authorization code flow with PKCE** is tested with the following Authorization servers:
 
 * [UAA](https://github.com/cloudfoundry/uaa)
 * [Keycloak](https://www.keycloak.org/)
@@ -297,31 +301,53 @@ against the OAuth 2 server, this must be configured separately. Currently,
 * [Azure](https://docs.microsoft.com/en-us/azure/active-directory/fundamentals/auth-oauth2)
 * [OAuth2 Proxy](https://oauth2-proxy.github.io/oauth2-proxy/)
 
-**Important**: from the OAuth 2.0 point of view, the RabbitMQ Management UI is a **public app** which
-means it cannot securely store credentials such as the *client_secret*. This means that RabbitMQ does not need to present a client_secret when authenticating users.
 
-It is usually possible to configure the OAuth client as a **public app** with the authorization server that you are using.
-If target authorization server only supports a **confidential app** or it requires a *client_secret*,
-then a *client_secret* **must** be configured using the `oauth_client_secret` setting.
+### <a id="basic-configuration" class="anchor" href="#basic-configuration">Basic configuration</a>
 
-To redirect users to the UAA server to authenticate, use the following configuration:
+Given the following configuration of the <a href="oauth2.html">OAuth 2.0 plugin</a>:
+
+<pre class="lang-ini">
+auth_oauth2.resource_server_id = new_resource_server_id
+auth_oauth2.issuer = https://my-oauth2-provider.com/realm/rabbitmq
+</pre>
+
+Apply the following configuration to enable OAuth 2.0 authentication:
+
+<pre class="lang-ini">
+management.oauth_enabled = true
+management.oauth_client_id = rabbit_user_client
+management.oauth_scopes = openid profile rabbitmq.*
+</pre>
+
+- `oauth_enabled` is mandatory and it enables OAuth 2.0 authentication provided we have OAuth 2.0 plugin configured too.
+- `oauth_client_id` is mandatory and it is the OAuth Client Id associated to this RabbitMQ cluster in the OAuth Provider and it is used to request a token on behalf of the user
+- `oauth_scopes` most of the time this setting is mandatory. It is a list of space-separated strings indicating which permissions the application is requesting. Most OAuth providers will only issue tokens with the scopes requested during the user authentication. RabbitMQ sends this field along with its `oauth_client_id` during the user authentication. However, there are OAuth providers who may automatically grant scopes associated to the `oauth_client_id`. Only in this latter case, we do not need to specify the `oauth_scopes` field.
+
+If `management.oauth_scopes` is not set, RabbitMQ defaults to `openid profile`.
+
+Depending on the Authorization server, you may use regular expression in scopes, e.g. <*resource_server_id*>`.*`, or
+instead you have to explicitly ask for them, e.g.:
+  * <*resource_server_id*>`.tag:administrator`
+  * <*resource_server_id*>`.read:*/*/*`
+
+Since RabbitMQ 3.13, it is no longer necessary to set the url of the OAuth 2.0 provider in `management.oauth_provider_url` setting. This URL is now read from the `auth_oauth2.issuer` setting. The management ui uses that URL to download the OpenID Provider configuration via the URL `auth_oauth2.issuer` followed by the path `/.well-known/openid-configuration`. If management ui cannot download the OpenID Provider configuration, it displays a warning message and users cannot login via OAuth 2.0.
+
+
+### <a id="configure-client-secret" class="anchor" href="#configure-client-secret">Configure client secret</a>
+
+**Important**: From the OAuth 2.0 point of view, the RabbitMQ Management UI is a **public app** which
+means it cannot securely store credentials such as the *client_secret*. This means that RabbitMQ should not need to present a client_secret when authenticating users.
+
+However, there could be OAuth Providers which requires a *client_secret* either for the initial user authentication request or for the token refresh request. For instance, UAA server requires `client_secret` to refresh the token. For these cases, it is possible to configure `oauth_client_secret` like shown below:
 
 <pre class="lang-ini">
 management.oauth_enabled = true
 management.oauth_client_id = rabbit_user_client
 management.oauth_client_secret = rabbit_user_client
-management.oauth_provider_url = https://my-uaa-server-host:8443/uaa
 management.oauth_scopes = openid profile rabbitmq.*
 </pre>
 
-> **Important**: UAA supports regular expression in scopes, e.g. `rabbitmq.*`. The above configuration
-assumes that the `resource_server_id` configured in the oauth2 backend matches the value `rabbitmq`.
-
-> **Important**: Since RabbitMQ 3.10, RabbitMQ uses `authorization_code` grant type. `implicit` flow is deprecated.
-
-> **Important**: `management.oauth_client_secret` is an optional setting. UAA 75.21.0 and earlier versions require `oauth_client_secret` regardless if the oauth client is configured as confidental.
-
-### Allow Basic and OAuth 2 authentication
+### <a id="allow-basic-auth-for-http-api" class="anchor" href="#allow-basic-auth-for-http-api">Allow Basic and OAuth 2 authentication for Management HTTP API</a>
 
 When using `management.oauth_enabled = true`, it is still possible to authenticate
 with [HTTP basic authentication](https://en.wikipedia.org/wiki/Basic_access_authentication)
@@ -329,7 +355,7 @@ against the HTTP API. This means both of the following examples will work:
 
 <pre class="lang-bash">
 # swap &lt;token&gt; for an actual token
-curl -i -u ignored:&lt;token&gt; http://localhost:15672/api/vhosts
+curl -i -u ignored:&lt;oauth2-token&gt; http://localhost:15672/api/vhosts
 </pre>
 
 as well as
@@ -338,15 +364,13 @@ as well as
 curl -i --header "authorization: Basic &lt;encoded credentials&gt;" http://localhost:15672/api/vhosts
 </pre>
 
-To switch to authenticate using OAuth 2 exclusively for management UI access, set the
+To switch to authenticate using OAuth 2 exclusively for management http access, set the
 `management.disable_basic_auth` configuration key to `true`:
 
 <pre class="lang-ini">
+...
 management.disable_basic_auth = true
-management.oauth_client_id = rabbit_user_client
-management.oauth_client_secret = rabbit_user_client
-management.oauth_provider_url = https://my-uaa-server-host:8443/uaa
-management.oauth_scopes = openid profile rabbitmq.*
+...
 </pre>
 
 When setting `management.disable_basic_auth` to `true`, only the `Bearer` (token-based) authorization method will
@@ -360,25 +384,30 @@ curl -i --header "authorization: Bearer &lt;token&gt;" http://localhost:15672/ap
 This is true for all endpoints except `GET /definitions` and `POST /definitions`. Those
 endpoints require the token to be passed in the `token` query string parameter.
 
-### Configure which scopes RabbitMQ requests to the authorization server
+### <a id="allow-basic-auth-for-mgt-ui" class="anchor" href="#allow-basic-auth-for-mgt-ui">Allow Basic and OAuth 2 authentication for Management UI</a>
 
-It is possible to configure which OAuth 2.0 scopes RabbitMQ should claim when redirecting the user to the authorization server.
+When using `management.oauth_enabled = true`, it is still possible to authenticate
+with [HTTP basic authentication](https://en.wikipedia.org/wiki/Basic_access_authentication)
+in the Management UI.
 
-If `management.oauth_enabled = true` and `management.oauth_scopes` is not set, RabbitMQ default to `openid profile`.
+By the default, `management.oauth_disable_basic_auth` has the value `true`, meaning that when OAuth 2 is
+enabled, the Management UI only accepts OAuth 2 authentication. The Management UI shows a button with the label **Click here to login** like shown in the screenshot below:
+<img src="./img/oauth2/management-oauth.png" alt="Single OAuth 2.0 resource, with oauth_disable_basic_auth = true" style="width:75%;height:75%"/>
 
-Depending on the Authorization server, we may use regular expression in scopes, e.g. <*resource_server_id*>`.*`, or
-instead we have to explicitly ask for them, e.g.:
-  * <*resource_server_id*>`.tag:administrator`
-  * <*resource_server_id*>`.read:*/*/*`
+To support OAuth 2.0 and Basic Authentication, set the
+ `management.oauth_disable_basic_auth` configuration key to `false`:
+
+<pre class="lang-ini">
+...
+management.oauth_disable_basic_auth = false
+...
+</pre>
+The Management UI shows now a username/password login form for Basic Authentication in addition to the **Click here to login** button for OAuth 2 authentication:
+
+<img src="./img/oauth2/management-oauth-with-basic-auth.png" alt="Single OAuth 2.0 resource, with oauth_disable_basic_auth = false" style="width:75%;height:75%"/>
 
 
-### Configure OpenID Connect Discovery endpoint
-
-By default, RabbitMQ assumes the OpenID Connect Discovery endpoint is at `<management.oauth_provider_url>/.well-known/openid-configuration`. If your endpoint differs, you can set yours via the `management.oauth_metadata_url` setting.
-
-RabbitMQ uses this endpoint to discover other endpoints such as **token** endpoint, **logout** endpoint, and others.
-
-### Logout workflow
+### <a id="#about-logout-workflow" class="anchor" href="#about-logout-workflow">About Logout workflow</a>
 
 RabbitMQ follows the [OpenID Connect RP-Initiated Logout 1.0 ](https://openid.net/specs/openid-connect-rpinitiated-1_0.html)
 specification to implement the logout workflow. This means that the logout workflow is triggered from the Management UI when the user clicks on the **Logout** button. Logging out from RabbitMQ management UI not only logs the user out from the management UI itself but also from the Identity Provider.
@@ -386,7 +415,7 @@ specification to implement the logout workflow. This means that the logout workf
 There are other two additional scenarios which can trigger a logout. One scenario occurs when the OAuth Token expires. Although RabbitMQ renews the token in the background before it expires, if the token expires, the user is logged out.
 The second scenario is when the management UI session exceeds the maximum allowed time configured on the [Login Session Timeout](https://www.rabbitmq.com/management.html#login-session-timeout).
 
-### Special attention to CSP header `connect-src`
+### <a id="#csp-header" class="anchor" href="#csp-header">Special attention to CSP header `connect-src`</a>
 
 To support the OAuth 2.0 protocol, RabbitMQ makes asynchronous REST calls to the [OpenId Connect Discovery endpoint](#Configure-OpenID-Connect-Discovery-endpoint). If you override the default [CSP headers](#csp), you have to make sure that the `connect-src` CSP directive whitelists the [OpenId Connect Discovery endpoint](#Configure-OpenID-Connect-Discovery-endpoint).
 
@@ -394,12 +423,12 @@ For instance, if you configured the CSP header with the value `default-src 'self
 
 In addition to the `connect-src` CSP header, RabbitMQ also needs the CSP directives `unsafe-eval` `unsafe-inline`, otherwise the OAuth 2.0 functionality may not work.
 
-### Identity-Provider initiated logon
+### <a id="#idp-initiated-logon" class="anchor" href="#idp-initiated-logon">Identity-Provider initiated logon</a>
 
 By default, the RabbitMQ Management UI uses the OAuth 2.0 **authorization code flow** to authenticate and authorize users.
-However, there are scenarios where users prefer to be automatically redirected to RabbitMQ without getting involved in additional logon flows. By using OAuth2 proxies and web portals, these additional logon flows can be avoided. With a single click, users navigate straight to a RabbitMQ Management UI with a token obtained under the covers. This is known as **Identity-Provider initiated logon**.
+However, there are scenarios where users prefer to be automatically redirected to RabbitMQ without getting involved in additional logon flows. By using OAuth 2.0 proxies and web portals, these additional logon flows can be avoided. With a single click, users navigate straight to a RabbitMQ Management UI with a token obtained under the covers. This is known as **Identity-Provider initiated logon**.
 
-RabbitMQ exposes a new setting called `management.oauth_initiated_logon_type` whose default value `sp_initiated`.
+RabbitMQ exposes a setting called `management.oauth_initiated_logon_type` whose default value `sp_initiated`.
 To enable an **Identity-Provider initiated logon** you set it to `idp_initiated`.
 
 <pre class="lang-ini">
@@ -410,6 +439,66 @@ management.oauth_provider_url = https://my-web-portal
 
 With the previous settings, the management UI exposes the HTTP endpoint `/login` which accepts `content-type: application/x-www-form-urlencoded` and it expects the JWT token in the `access_token` form field. This is the endpoint where the Web portal will redirect users to the management UI.
 Additionally, RabbitMQ also accepts a JWT token in the HTTP `Authorization` header when the user lands on the management UI.
+
+With `sp_initiated` logon types, there is no need to configure the `oauth_provider_url` if `auth_oauth2.issuer` was set. However, for `idp_initiated` flows the `auth_oauth2.issuer` url may not necessarily be the url where to send users to authenticate. When this occurs, the `management.oauth_provider_url` overrides the `auth_oauth2.issuer` url.
+
+### <a id="#support-multiple-resources" class="anchor" href="#support-multiple-resources">Support multiple OAuth 2.0 resources</a>
+
+RabbitMQ 3.13 introduced support for multiple OAuth 2.0 resources in the OAuth 2.0 plugin and in the Management plugin.
+
+Once you have configured the [OAuth 2.0 plugin](oauth2.html#multiple-resource-servers) with all the required OAuth 2.0 resources, they are automatically supported by the management ui.
+
+Given the following OAuth 2.0 plugin configuration which consists of four OAuth 2.0 resources:
+<pre class="lang-ini">
+auth_oauth2.issuer = http://some_idp_url
+auth_oauth2.scope_prefix = rabbitmq.
+auth_oauth2.resource_servers.1.id = rabbit_prod
+auth_oauth2.resource_servers.2.id = rabbit_dev
+auth_oauth2.resource_servers.3.id = rabbit_qa
+auth_oauth2.resource_servers.4.id = rabbit_internal
+</pre>
+
+This is the minimum configuration to enable all resources in the management ui:
+<pre class="lang-ini">
+management.oauth_enabled = true
+management.oauth_scopes = openid rabbitmq.tag:management rabbitmq.read:*/*
+</pre>
+
+However, it is possible to configure the client_id, the labels for each resource, or the login type, the scopes
+for each resource or the provider_url. Or even disable some resources in the management ui.
+See below an example configuration:
+
+<pre class="lang-ini">
+management.oauth_enabled = true
+management.oauth_initiated_logon_type = sp_initiated
+management.oauth_scopes = openid rabbitmq.tag:management rabbitmq.read:*/*
+
+management.oauth_resource_servers.1.id = rabbit_prod
+management.oauth_resource_servers.1.oauth_client_id = rabbit_prod_mgt_ui
+management.oauth_resource_servers.1.label = RabbitMQ Production
+
+management.oauth_resource_servers.2.id = rabbit_dev
+management.oauth_resource_servers.2.oauth_client_id = rabbit_dev_mgt_ui
+management.oauth_resource_servers.2.label = RabbitMQ Development
+
+management.oauth_resource_servers.3.id = rabbit_qa
+management.oauth_resource_servers.3.label = RabbitMQ QA
+management.oauth_resource_servers.3.oauth_initiated_logon_type = idp_initiated
+management.oauth_resource_servers.3.oauth_provider_url = http://qa_url
+
+management.oauth_resource_servers.4.id = rabbit_internal
+management.oauth_resource_servers.4.disabled = true
+</pre>
+
+
+This is the Management UI layout for the above configuration with Basic Authentication disabled in the Management UI (`management.oauth_disable_basic_auth = true`).
+
+<img src="./img/oauth2/management-oauth-many.png" alt="More than one OAuth 2.0 resource, with oauth_disable_basic_auth = true" style="width:75%;height:75%"/>
+
+And this is the Management UI with Basic Authentication enabled (`management.oauth_disable_basic_auth = false`).
+
+<img src="./img/oauth2/management-oauth-many-with-basic-auth.png" alt="More than one OAuth 2.0 resource, with oauth_disable_basic_auth = false" style="width:75%;height:75%"/>
+
 
 ## <a id="http-api" class="anchor" href="#http-api">HTTP API</a>
 

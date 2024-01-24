@@ -21,17 +21,11 @@ limitations under the License.
 
 This tutorial-style guide has two primary goals:
 
-1. Explore how applications and end users can [authenticate](./access-control.html) with RabbitMQ server using OAuth 2.0 protocol rather than
-   the traditional username/password pairs or x.509 certificates.
-2. Explore what it takes to set up RabbitMQ Server with OAuth 2.0 authentication mechanism.
-   Additionally it explains how to stand up ([UAA](https://github.com/cloudfoundry/uaa)) as an OAuth 2.0 Authorization Server and all the operations to create OAuth clients, users and obtain their tokens.
+1. Explore how applications and end users can [authenticate](./access-control.html) with RabbitMQ server using OAuth 2.0 protocol rather than the traditional username/password pairs or x.509 certificates.
+2. Explore what it takes to set up RabbitMQ Server with OAuth 2.0 authentication mechanism across several Authorization Servers.
 
-The guide covers several OAuth 2 usage scenarios in the context of RabbitMQ and is
-accompanied by [a public GitHub repository](https://github.com/rabbitmq/rabbitmq-oauth2-tutorial).
-The GitHub repository includes RabbitMQ and UAA configuration files, as well as Make targets
-that make it easier to
-
-To understand the details of how to configure RabbitMQ with Oauth2, go to the [Understand the environment](#understand-the-environment) section.
+The guide is
+accompanied by [a public GitHub repository](https://github.com/rabbitmq/rabbitmq-oauth2-tutorial) which hosts all the scripts required to deploy the examples demonstrated on the guide.
 
 ## <a id="toc" class="anchor" href="#toc">Table of Content</a>
 
@@ -42,11 +36,13 @@ To understand the details of how to configure RabbitMQ with Oauth2, go to the [U
 * [Access Management UI using OAuth 2.0 tokens](#access-management-ui)
     - [Service-Provider initiated logon](#service-provider-initiated-logon)
     - [Identity-Provider initiated logon](#identity-provider-initiated-logon)
-* [Access other protocols using OAuth 2.0 tokens](#access-other-protocols)
-  - [Management REST api](#monitoring-agent-accessing-management-rest-api)
-	- [AMQP protocol](#amqp-protocol)
-	- [JMS protocol](#jms-protocol)
-	- [MQTT protocol](#mqtt-protocol)
+* [Access other protocols using OAuth 2.0 tokens](#access-other-protocols)    
+    - [Management REST api](#monitoring-agent-accessing-management-rest-api)
+	  - [AMQP protocol](#amqp-protocol)
+	  - [JMS protocol](#jms-protocol)
+	  - [MQTT protocol](#mqtt-protocol)
+    - [AMQP 1.0 protocol](#amqp10-protocol)
+* [Messaging on Topic Exchanges](#messaging-on-topic-exchanges)    
 * [Use advanced OAuth 2.0 configuration](#advanced-configuration)
 	- [Use custom scope field](#use-custom-scope-field)
 	- [Use multiple asymmetrical signing keys](#use-multiple-asymmetrical-signing-keys)
@@ -55,20 +51,12 @@ To understand the details of how to configure RabbitMQ with Oauth2, go to the [U
 	- [Use Rich Authorization Requests tokens](#use-rar-tokens)
 * Use different OAuth 2.0 servers
 	- [KeyCloak](oauth2-examples-keycloak.html)
-	- [https://auth0.com/](oauth2-examples-oauth0.html)
-	- [Azure Active Directory](oauth2-examples-azure.html)
-    - [OAuth2 Proxy](./oauth2-examples-proxy.html)
-* [Understanding the environment](#understand-the-environment)
-	- [RabbitMQ server](#rabbitmq-server)
-	- [UAA server](#uaa-server)
-	- [UAA client](#uaa-client)
-	- [Clients, Users & Permissions in UAA](#clients-users-permissions-in-uaa)
-* [Deeper Dive](#deeper-dive)
-	- About Users and Clients
-	- About Permissions
-	- About signing key required to configure RabbitMQ
-	- About rotating UAA signing key
-	- Understanding Access tokens and how RabbitMQ uses it
+	- [Auth0](oauth2-examples-auth0.html)
+	- [Azure Active Directory](oauth2-examples-azure.html)  
+    - [OAuth2 Proxy](./oauth2-examples-oauth2-proxy.html)
+    - [Okta](./oauth2-examples-okta.html)
+    - [Google](./oauth2-examples-google.html)  **NOT SUPPORTED**
+    - [Multiple OAuth 2.0 servers and/or audiences](./oauth2-examples-multiresource.html)
 
 <!-- /TOC -->
 
@@ -81,35 +69,16 @@ To understand the details of how to configure RabbitMQ with Oauth2, go to the [U
 
 ## <a id="getting-started-with-uaa-and-rabbitmq" class="anchor" href="#getting-started-with-uaa-and-rabbitmq">Getting started with UAA and RabbitMQ</a>
 
-Before proceeding with other more sophisticated examples, let's start RabbitMQ configured with OAuth 2.0 plugin and
-[UAA](https://docs.cloudfoundry.org/concepts/architecture/uaa.html) as the OAuth 2.0 Authorization Server.
+To demonstrate OAuth 2.0 you need, at least, an OAuth 2.0 Authorization server and RabbitMQ appropriately configured for the chosen Authorization server. This guide uses [UAA](https://docs.cloudfoundry.org/concepts/architecture/uaa.html) as Authorization Server to demonstrate basic and advanced configuration to access to the Management UI and various messaging protocols.
 
-In the next section, you
-will see how to set up UAA and RabbitMQ. If you are new to OAuth 2.0, it is a good starting point. If you already know OAuth 2.0
-and you want to learn how to configure RabbitMQ to talk to one of OAuth 2.0 server tested on this tutorial, you can jump
-straight to them. They are:
+This guide also demonstrates how to configure RabbitMQ to use other Authorization Servers besides [UAA](https://docs.cloudfoundry.org/concepts/architecture/uaa.html) such as [KeyCloak](oauth2-examples-keycloak.html). The table of content of this guide has the full list of Authorization Servers.
 
-- [KeyCloak](./oauth2-examples-keycloak.html)
-- [https://auth0.com/](./oauth2-examples-oauth0.html)
-- [Azure Active Directory](./oauth2-examples-azure.html)
-- [UAA](#uaa-asymmetrical-signing-keys)
-
-
-#### <a id="uaa-asymmetrical-signing-keys" class="anchor" href="#uaa-asymmetrical-signing-keys">Use Asymmetrical Digital Singing Keys</a>
-
-There are two ways to set up OAuth 2.0 in RabbitMQ. One uses symmetrical signing keys. And the other uses
-asymmetrical signing keys. The Authorization server is who digitally signs the Access tokens and RabbitMQ
-has to be configured to validate any of the two types of digital signatures.
-
-Given that asymmetrical keys is the most widely used option, you are going to focus on how to
-configure RabbitMQ with them.
-
-Run the following 2 commands to get the environment ready to see Oauth 2.0 plugin in action:
+Run the following two commands to start UAA and RabbitMQ configured for UAA:
 
   1. `make start-uaa` to get UAA server running
   2. `make start-rabbitmq` to start RabbitMQ server
 
-The last command starts a RabbitMQ server with [specific configuration file](https://github.com/rabbitmq/rabbitmq-oauth2-tutorial/blob/main/conf/uaa/rabbitmq.config).
+The last command starts a RabbitMQ with [this configuration file](https://github.com/rabbitmq/rabbitmq-oauth2-tutorial/blob/main/conf/uaa/rabbitmq.config).
 
 ## <a id="access-management-ui" class="anchor" href="#access-management-ui">Access Management UI using OAuth 2.0 tokens</a>
 
@@ -392,6 +361,62 @@ make start-mqtt-publish TOKEN=$(bin/jwt_token scopes-for-mqtt.json legacy-token-
 wont be able to do bind a queue with routing_key `test` to the `amq.topic` exchange because that user
 in UAA does not have the required permissions. In our handcrafted token, you have granted ourselves the right permissions/scopes.
 
+### <a id="amqp10-protocol" class="anchor" href="#amqp10-protocol">AMQP 1.0 protocol</a>
+
+In this use case you are demonstrating a basic AMQP 1.0 application which reads, via an environment variable (`PASSWORD`),
+the JWT token that will use as password when authenticating with RabbitMQ.
+
+Before testing a publisher and a subscriber application you need to build a local image for the
+basic AMQP 1.0 application by invoking this command:
+<pre class="lang-bash">
+make build-amqp1_0-client
+</pre>
+
+Launch RabbitMQ with the following command. It will start RabbitMQ configured with UAA as its Authorization Server.
+<pre class="lang-bash">
+make start-rabbitmq
+</pre>
+
+Launch UAA.
+<pre class="lang-bash">
+make start-uaa
+</pre>
+
+And send a message. It uses the *client_id*  `jms_producer`, declared in UAA, to obtain a token:
+<pre class="lang-bash">
+make start-amqp1_0-publisher
+</pre>
+
+## <a id="messaging-on-topic-exchanges" class="anchor" href="#messaging-on-topic-exchanges">Messaging on Topic Exchanges</a>
+
+This section has been dedicated exclusively to explain what scopes you need in order to operate on **Topic Exchanges**.
+
+**NOTE**: None of the users and/or clients declared in any of Authorization servers provided by this tutorial have the
+appropriate scopes to operate on **Topic Exchanges**. In the [MQTT Protocol](#mqtt-protocol) section, the application used a hand-crafted token with the scopes to operate on **Topic Exchanges**.
+
+To bind and/or unbind a queue to/from a **Topic Exchange**, you need to have the following scopes:
+
+- **write** permission on the queue and routing key -> `rabbitmq.write:<vhost>/<queue>/<routingkey>`
+> e.g. `rabbitmq.write:*/*/*`
+
+- **read** permission on the exchange and routing key -> `rabbitmq.write:<vhost>/<exchange>/<routingkey>`
+> e.g. `rabbitmq.read:*/*/*`
+
+To publish to a **Topic Exchange**, you need to have the following scope:
+
+- **write** permission on the exchange and routing key -> `rabbitmq.write:<vhost>/<exchange>/<routingkey>`
+> e.g. `rabbitmq.write:*/*/*`
+
+
+OAuth 2.0 authorisation backend supports variable expansion when checking permission on topics. It supports any JWT claim whose value is a plain string and the `vhost` variable. For example, if a user has connected with the token below against the vhost `prod` should have write permission to send to any exchanged starting with `x-prod-` and any routing key starting with `u-bob-`:
+
+<pre class="json">
+{
+  "sub" : "bob",
+  "scope" : [ "rabbitmq.write:*/q-{vhost}-*/u-{sub}-*" ]
+}
+</pre>
+
 ## <a id="advanced-configuration" class="anchor" href="#advanced-configuration">Use advanced OAuth 2.0 configuration</a>
 
 
@@ -452,8 +477,8 @@ There are two ways to configure RabbitMQ with multiple signing keys:
 First you add a second signing key called `legacy-token-2-key` whose public key is `conf/public-2.pem`:
 
 <pre class="lang-bash">
-docker exec -it rabbitmq rabbitmqctl add_uaa_key legacy-token-2-key --pem-file=/conf/public-2.pem
-Adding UAA signing key "legacy-token-2-key" filename: "/conf/public-2.pem"
+docker exec -it rabbitmq rabbitmqctl add_signing_key legacy-token-2-key --pem-file=/conf/public-2.pem
+Adding OAuth signing key "legacy-token-2-key" filename: "/conf/public-2.pem"
 </pre>
 
 And then you issue a token using the corresponding private key and use it to access the management endpoint `/api/overview`.
@@ -753,316 +778,3 @@ docker logs producer_with_roles -f
 
 
 For more information on this new capability check out the [OAuth 2 guide](./oauth2.html#rich-authorization-request).
-
-
-## <a id="understanding-environment" class="anchor" href="#understanding-environment">Understand the Environment</a>
-
-### RabbitMQ Server
-
-You need to launch RabbitMQ with the following prerequisites:
-
-* Like with all other [plugins](./plugins.html), the OAuth 2.0 plugin must be enabled.
-* Plugin is configured with the [same signing key as used by UAA](#about-signing-key-required-to-configure-rabbitmq)
-* The node is configured to use OAuth 2.0 [authN and authZ backend](./access-control.html)
-* [Management plugin](./management.html) is configured to use UAA
-
-The following configuration snippets demonstrate these steps:
-
-<pre class="lang-erlang">
-  {rabbitmq_auth_backend_oauth2, [
-    {resource_server_id, &lt;&lt;"rabbitmq"&gt;&gt;}
-    {key_config, [
-      {default_key, &lt;&lt;"legacy-token-key"&gt;&gt;},
-      {signing_keys, #{
-        &lt;&lt;"legacy-token-key"&gt;&gt; => {map, #{&lt;&lt;"kty"&gt;&gt; => &lt;&lt;"MAC"&gt;&gt;,
-                                  &lt;&lt;"alg"&gt;&gt; => &lt;&lt;"HS256"&gt;&gt;,
-                                  &lt;&lt;"use"&gt;&gt; => &lt;&lt;"sig"&gt;&gt;,
-                                  &lt;&lt;"value"&gt;&gt; => &lt;&lt;"tokenKey"&gt;&gt;}}
-      }}
-    ]}
-  ]},
-</pre>
-
-<pre class="lang-erlang">
-[
-  % Instruct the node to use OAuth 2.0 backend first, then internal if necessary
-  {rabbit, [
-     {auth_backends, [rabbit_auth_backend_oauth2, rabbit_auth_backend_internal]}
-  ]},
-].
-</pre>
-
-<pre class="lang-erlang">
-[
-  {rabbitmq_management, [
-    %% eanble Oauth
-    {oauth_enabled,    true},
-    %% use UAA
-    {enable_uaa,    true},
-    %% OAuth 2 identity server client ID
-    {oauth_client_id, "rabbit_client"},
-    %% UAA endpoint location
-    {oauth_provider_url, "http://localhost:8080"}
-  ]},
-].
-</pre>
-
-Find a complete example in the [GitHub repository](https://github.com/rabbitmq/rabbitmq-oauth2-tutorial/blob/master/conf/symmetric_key/rabbitmq.config).
-
-
-### UAA Server
-
-Standalone OAuth 2.0 server (https://github.com/cloudfoundry/uaa). Its primary role is as an OAuth 2.0 provider, issuing tokens for client applications to use when they act on behalf of Cloud Foundry users. It can also authenticate users with their Cloud Foundry credentials, and can act as an SSO service using those credentials. It has endpoints for managing user accounts and for registering OAuth 2.0 clients, as well as various other management functions
-
-**Important note**: UAA can use an external database such PostgreSQL or MySQL.
-For the demonstration purposes of this tutorial, the internal database is sufficient.
-
-To verify that UAA is running and accessible on `localhost:8080`:
-
-<pre class="lang-bash">
-curl -k  -H 'Accept: application/json' http://localhost:8080/uaa/info | jq .
-</pre>
-
-Currently RabbitMQ Management plugin does not support latest version of UAA. That is
-why in order to run the use cases you use the image built from the folder `uaa-4.24`. This has to do
-with the javascript library that comes with the management plugin.
-
-
-### UAA client
-
-In order to interact with UAA server there is a convenient command-line application called `uaac`. To install it and get it ready run the following command:
-
-<pre class="lang-bash">
-make install-uaac
-</pre>
-
-In order to operate with uaa you need to "authenticate". There is an OAuth 2.0 client preconfigured with the following credentials `admin:adminsecret`.
-This user is configured under `{uaa_repo}/uaa/src/main/webapp/WEB-INF/spring/oauth-clients.xml`. The above command takes care of this.
-
-### Clients, Users and Permissions in UAA
-
-The Make target `make setup-users-and-clients` accomplishes a few things:
-
-* Created `rabbit_client` client -in UAA- which is going to be used by RabbitMQ server to authenticate management users coming to the Management UI.
-* Created `rabbit_admin` user -in UAA- which is going to be the full administrator user with full access.
-* Created `rabbit_monitor` user -in UAA- which is going to be the monitoring user with just the *monitoring* *user tag*.
-* Created `consumer` client -in UAA- which is going to be the RabbitMQ User for the consumer application.
-* Created `producer` client -in UAA- which is going to be the RabbitMQ User for the producer application.
-* Obtained tokens -from UAA- for the two end users and for the two clients.
-
-
-
-## <a id="deeper-dive" class="anchor" href="#deeper-dive">Deeper Dive</a>
-
-### About Users and Clients
-
-First of all, you need to clarify the distinction between *users* and *clients*.
-- A *user* is often represented as a live person. This is typically the user who wants to access the RabbitMQ Management UI/API.
-- A *client* (a.k.a. *service account*) is an application that acts on behalf of a user or act on its own. This is typically an AMQP application.
-
-### About Permissions
-
-*Users* and *clients* will both need to get granted permissions. In OAuth 2.0, permissions/roles are named *scopes*. They are free form strings. When a RabbitMQ user connects to RabbitMQ, it must provide a JWT token with those *scopes* as a password (and empty username). And RabbitMQ determines from those *scopes* what permissions it has.
-
-The *scope* format recognized by RabbitMQ is as follows
-
-<pre class="lang-plaintext">
-{resource_server_id}.{permission}:{vhost_pattern}/{name_pattern}/{routing_key_pattern}
-</pre>
-
-where:
-
-- `{resource_server_id}` is a prefix used for *scopes* in UAA to avoid scope collisions (or unintended overlap)
-- `{permission}` is an access permission (configure, read, write, tag)
-- `{vhost_pattern}` is a wildcard pattern for vhosts token has access to
-- `{name_pattern}` is a wildcard pattern for resource name
-- `{routing_key_pattern}` is an optional wildcard pattern for routing key in topic authorization
-
-For more information, see [how scopes are translated to RabbitMQ permissions](https://github.com/rabbitmq/rabbitmq-auth-backend-oauth2#scope-to-permission-translation)
-and [RabbitMQ permissions](https://www.rabbitmq.com/access-control.html#permissions) documentation.
-
-Sample *scope*(s):
-
-* `rabbitmq.read:*/*` grants `read` permission on any *vhost* and on any *resource*
-* `rabbitmq.write:uaa_vhost/x-*` grants `write` permissions on `uaa_vhost` on any *resource* that starts with `x-`
-* `rabbitmq.tag:monitoring` grants `monitoring` *user tag*
-
-> Be aware that you have used `rabbitmq` resource_server_id in the sample scopes. RabbitMQ must be configured with this same `resource_server_id`. Check out [conf/symmetric_keys/rabbitmq.config](https://github.com/rabbitmq/rabbitmq-oauth2-tutorial/blob/main/conf/uaa-symmetrical/rabbitmq.config)
-
-
-### About signing key required to configure RabbitMQ
-
-This section is only to explain one of things you need to take care to configure RabbitMQ with OAuth 2.0 auth-backend. Do not run any of the commands explained on this section. They are all included in the `make` commands you will cover in the following sections.
-
-To configure OAuth 2.0 plugin in RabbitMQ you need to obtain the JWT signing key used by UAA when it issues JWT tokens.
-But our `admin` client does not have yet the right *authority* (`uaa.resource`) to get that signing key. You are going to "auto" grant it ourselves:
-
-<pre class="lang-bash">
-uaac client update admin --authorities "clients.read clients.secret clients.write uaa.admin clients.admin scim.write scim.read uaa.resource"
-</pre>
-
-And now you retrieve the signing key:
-
-<pre class="lang-bash">
-uaac signing key -c admin -s adminsecret
-</pre>
-
-which outputs:
-
-<pre class="lang-plaintext">
-kty: MAC
-alg: HS256
-value: tokenKey
-use: sig
-kid: legacy-token-key
-</pre>
-
-Another way to retrieve it is via the UAA REST API:
-
-<pre class="lang-bash">
-curl 'http://localhost:8080/uaa/token_key' -i  -H 'Accept: application/json' -u admin:adminsecret
-</pre>
-
-
-### About Rotating UAA signing key
-
-When UAA rotates the signing key you need to reconfigure RabbitMQ with that key. You don't need to edit the configuration and restart RabbitMQ.
-
-Instead, thru the `rabbitmqctl add_uaa_key` command you can add more keys. This is more or less what could happen.
-
-1. UAA starts up with a signing key called "key-1"
-2. You configure RabbitMQ with the signing key "key-1" following the procedure explained in the previous section
-3. RabbitMQ starts
-4. An application obtains a token from UAA signed with that "key-1" signing key and connects to RabbitMQ using the token
-5. RabbitMQ can validate it because it has the signing key
-6. UAA rotates the signing key. It has a new key "key-2"
-7. An application obtains a new token from UAA. This time it is signed using "key-2". The application connect to RabbitMQ using the new token
-8. RabbitMQ fails to validate it because it does not have "key-2" signing key. Later on you will see how RabbitMQ finds out the signing key name for the JWT
-9. You add the new signing key via the `rabbitmqctl` command
-10. This time RabbitMQ can validate tokens signed with "key-2"
-
-One way to keep RabbitMQ up-to-date is to periodically check with [token keys endpoint](https://docs.cloudfoundry.org/api/uaa/version/4.28.0/index.html#token-keys) (using the `E-tag` header). When the list of active tokens key has changed, you retrieve them and add them using `rabbitmqctl add_uaa_key`.
-
-You are probably missing the ability to remove deprecated/obsolete signing keys.
-The [function](https://github.com/rabbitmq/rabbitmq-auth-backend-oauth2/blob/master/src/uaa_jwt.erl) is there so you could potentially invoke it via `rabbitmqctl eval` command.
-
-
-### Understanding Access tokens and how RabbitMQ uses it
-
-First of all, lets quickly go thru how RabbitMQ uses the OAuth Access Tokens; how RabbitMQ users/clients pass the token; whats inside the token and what information in the token is relevant for RabbitMQ and how it uses it.
-
-#### How Clients Pass JWT Tokens to RabbitMQ
-
-RabbitMQ expects a [JWS](https://tools.ietf.org/html/rfc7515) in the password field.
-
-For end users, the best way to come to the Management UI is by the following url, replacing `{token}` with an actual encoded JWT.
-This is how `make open` command is able to open the browser and login the user using a JWT.
-
-<pre class="lang-bash">
-http://localhost:15672/#/login/{token}
-</pre>
-
-#### Signed Tokens
-
-RabbitMQ expects a JWS, i.e. signed JWT. There are three parts to a signed token (JWS):
-
- * a header which describes the signing algorithm and the signing key identifier used to sign the JWT
- * a body with the actual token
- * a signature.
-
-This is a example of the header of a JWT issued by UAA:
-
-<pre class="lang-javascript">
-{
-  "alg": "HS256",
-  "jku": "https://localhost:8080/uaa/token_keys",
-  "kid": "legacy-token-key",
-  "typ": "JWT"
-}
-</pre>
-
-where:
-
-  - [typ](https://tools.ietf.org/html/rfc7515#page-8) is the media type which in this case is JWT. However the JWT protected header and JWT payload are secured using HMAC SHA-256 algorithm
-  - [alg](https://tools.ietf.org/html/rfc7515#page-10) is the signature algorithm
-  - [jku](https://tools.ietf.org/html/rfc7515#page-10) is the HTTP GET resource that returns the signing keys supported by the server that issued this token
-  - [kid](https://tools.ietf.org/html/rfc7515#page-11) identifies the signing key used to sign this token
-
-Note that `uaac token decode` does not print the header only the actual token.
-One simple way to get this information is via [jwt.io](https://jwt.io).
-
-To get the signing key used by UAA you access the *token key* access point with the credentials of the `admin` UAA client; or a client which has the permission to get it.
-
-<pre class="lang-bash">
-curl http://localhost:8080/uaa/token_key \
- -H 'Accept: application/json' \
- -u admin:adminsecret  | jq .
-</pre>
-
-It should print out:
-
-<pre class="lang-javascript">
-{
-  "kty": "MAC",
-  "alg": "HS256",
-  "value": "tokenKey",
-  "use": "sig",
-  "kid": "legacy-token-key"
-}
-</pre>
-
-You can see that the `kid`s value above matches the `kid`'s in the JWT.
-
-**Relevant token information for RabbitMQ**
-
-Let's examine the following token which corresponds to end-user `rabbit_admin`.
-
-<pre class="lang-javascript">
-{
-  "jti": "dfb5f6a0d8d54be1b960e5ffc996f7aa",
-  "sub": "71bde130-7738-47b8-8c7d-ad98fbebce4a",
-  "scope": [
-    "rabbitmq.read:*/*",
-    "rabbitmq.write:*/*",
-    "rabbitmq.tag:administrator",
-    "rabbitmq.configure:*/*"
-  ],
-  "client_id": "rabbit_client",
-  "cid": "rabbit_client",
-  "azp": "rabbit_client",
-  "grant_type": "password",
-  "user_id": "71bde130-7738-47b8-8c7d-ad98fbebce4a",
-  "origin": "uaa",
-  "user_name": "rabbit_admin",
-  "email": "rabbit_admin@example.com",
-  "auth_time": 1551957721,
-  "rev_sig": "d5cf8503",
-  "iat": 1551957721,
-  "exp": 1552000921,
-  "iss": "http://localhost:8080/uaa/oauth/token",
-  "zid": "uaa",
-  "aud": [
-    "rabbitmq",
-    "rabbit_client"
-  ]
-}
-</pre>
-
-These are the fields relevant for RabbitMQ:
-- `sub` ([Subject](https://tools.ietf.org/html/rfc7519#page-9)) this is the identify of the subject of the token. **RabbitMQ uses this field to identify the user**. This token corresponds to the `rabbit_admin` end user. If you logged into the Management UI, you would see it in the top-right corner. If this were an AMPQ user, you would see it on each connection listed in the connections tab.
-  UAA would add 2 more fields relative to the *subject*: a `user_id` with the same value as the `sub` field, and `user_name` with user's name. In UAA, the `sub`/`user_id` fields contains the user identifier, which is a GUID.
-
-- `client_id` (not part of the RFC-7662) identifies the OAuth client that obtained the JWT. You used `rabbit_client` client to obtain the JWT for `rabbit_admin` user. **RabbitMQ also [uses](https://github.com/rabbitmq/rabbitmq-auth-backend-oauth2/blob/master/src/rabbit_auth_backend_oauth2.erl#L169) this field to identify the user**.
-
-- `aud` ([Audience](https://tools.ietf.org/html/rfc7519#page-9)) this identifies the recipients and/or resource_server of the JWT. **RabbitMQ uses this field to validate the token**. When you configured RabbitMQ OAuth plugin, you set `resource_server_id` attribute with the value `rabbitmq`. The list of audience must have the `rabbitmq` otherwise RabbitMQ rejects the token.
-
-- `jti` ([JWT ID](https://tools.ietf.org/html/rfc7662#section-2.2)) this is just an identifier for the JWT
-
-- `iss` ([Issuer](https://tools.ietf.org/html/rfc7662#section-2.2)) identifies who issued the JWT. UAA will set it to end-point that returned the token.
-
-- `scope` is an array of [OAuth Scope](https://tools.ietf.org/html/rfc7523#page-4). **This is what RabbitMQ uses to determine the user's permissions**. However, RabbitMQ will only use the *scopes* which belong to this RabbitMQ identified by the plugin configuration parameter `resource_server_id`. In other words, if the `resource_server_id` is `rabbitmq`, RabbitMQ will only use the *scopes* which start with `rabbimq.`.
-
-- `exp` ([exp](https://tools.ietf.org/html/rfc7519#page-9)) identifies the expiration time on
-   or after which the JWT MUST NOT be accepted for processing. RabbitMQ uses this field to validate the token if it is present.
-   > Implementers MAY provide for some small leeway, usually no more than
-   a few minutes, to account for clock skew. However, RabbitMQ does not add any leeway.

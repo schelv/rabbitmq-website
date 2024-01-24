@@ -17,6 +17,9 @@ limitations under the License.
 
 # Use OAuth2 Proxy and Keycloak as OAuth 2.0 server
 
+Demonstrate how to authenticate using OAuth 2.0 protocol
+and OAuth2 Proxy as Authorization Server using the following flows:
+
 Let's test the following flow:
 
 * Access the RabbitMQ Management UI using a browser through OAuth2 Proxy
@@ -59,7 +62,7 @@ There is a dedicated **Keycloak realm** called `Test` configured as follows:
 To start RabbitMQ run the following two commands. The first one tells RabbitMQ to pick up the
 rabbitmq.conf found under [conf/oauth2-proxy/rabbitmq.conf](https://github.com/rabbitmq/rabbitmq-oauth2-tutorial/tree/main/conf/oauth2-proxy/rabbitmq.conf)
 
-<pre class="lang-plain">
+<pre class="lang-bash">
 export MODE=oauth2-proxy
 make start-rabbitmq
 </pre>
@@ -78,7 +81,7 @@ auth_oauth2.verify_aud = false
 
 To start OAuth2 Proxy, run the following command:
 
-<pre class="lang-plain">
+<pre class="lang-bash">
 make start-oauth2-proxy
 </pre>
 
